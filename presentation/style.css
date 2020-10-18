@@ -1,0 +1,9 @@
+.reveal pre {
+    margin-left: -1.5em;
+    margin-right: auto;
+}
+
+.reveal pre code {
+    max-height: 500px;
+    width: 55em;
+}

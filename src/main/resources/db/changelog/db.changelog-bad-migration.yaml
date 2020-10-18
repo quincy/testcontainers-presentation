@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - preConditions:
+    -runningAs:
+      username: presentation_lbuser
+
+  - include:
+      file: db/changelog/changes/db.changelog-001-CREATE-Address-Table.sql
+  - include:
+      file: db/changelog/changes/db.changelog-002-CREATE-Person-Table.sql
+  - include:
+      file: db/changelog/changes/db.changelog-003-MODIFY-Person-Table-bad.sql
