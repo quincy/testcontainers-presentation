@@ -17,5 +17,5 @@ interface AddressDaoV1 {
            FROM Address
            WHERE city = :city"""
     )
-    fun findByCity(city: String): Set<Address>?
+    fun findByCity(city: String): Set<Address>
 }

@@ -28,78 +28,18 @@ Testcontainers can improve your life and make you a testing hero.
 
 
 ## Agenda
+* What is it?
 * Why test external service interactions?
-* Some bad approaches to testing
-* How Testcontainers can help
-* Requirements
+* Areas of testing which benefit
+* Setup
 * Examples
   + Database schema migration
   + Verifying Elasticsearch queries
-  + Acceptance Testing
+  + Webdriver Testing
 * Conclusion
 
 
-## Why test external service interactions?
-
-
-You have to have some kind of integration testing
-
-
-You don't want to wait until you deploy your application to find problems
-
-
-Once you know your application is interacting with the external services correctly,
-how do you ensure that it continues to do so?
-
-
-What about when you...
-* upgrade to a new version?
-* update the database schema?
-* decide to use a library from a different vendor?
-
-
-## Some bad approaches to testing
-
-
-### Human-driven manual testing
-
-
-Having a human exercise the same tests from a binder or wiki over and over again
-is a waste of their time and potential
-
-They could be doing so much more for your organization
-
-
-### Provisioning a testing cluster
-
-
-You probably need a test environment
-
-
-But running your integration tests there can lead to problems
-
-
-It's expensive
-
-
-You don't have isolation from what other teams are doing in the cluster
-
-
-Environmental issues happen,
-
-leading to false-positives
-
-
-### Writing every test to use a Testcontainer
-
-
-Running a docker container is far more expensive than a unit test
-
-
-A test double of the dao or client layer will suffice in 99% of your tests
-
-
-## How Testcontainers can help
+## What is it?
 
 
 Testcontainers is a Java library which helps you run Docker containers in your test suite
@@ -111,7 +51,26 @@ These containers can be used to stand in for any external service you need to in
 The library can manage the lifecycle of the containers for you so you only need to focus on adding value with your tests
 
 
-Here are some examples of how you can use Testcontainers and how it makes your life better
+## Why test external service interactions?
+
+
+You need to have some kind of integration testing
+
+
+You don't want to wait until you deploy your application to find problems
+
+
+Once you know your application is interacting with the external services correctly,
+how do you ensure that it continues to do so?
+
+
+Unit tests can guard your code from regressions that can happen when you...
+* Upgrade to a new version
+* Update the database schema
+* Decide to use a library from a different vendor
+
+
+## Areas of testing which benefit
 
 
 ### Data access layer test
@@ -132,13 +91,10 @@ Ensure your application continues to work as you migrate from MySQL to Postgres
 ### Application integration tests
 
 
-Test cluster is short lived
+Test environment is short-lived
 
 
 Reliably available only when you need it
-
-
-All dependencies such as databases, message queues, Web servers start in a known state
 
 
 ### UI/Acceptance testing
@@ -153,7 +109,16 @@ Each test runs in a fresh browser instance with no previous state
 Test failures give you a video recording of the failure
 
 
-## Requirements
+### Not a Silver Hammer
+
+
+Running a docker container is far more expensive than a unit test
+
+
+A mock of the DAO or client layer will suffice in 99% of your tests
+
+
+## Setup
 
 
 ### Docker
@@ -170,6 +135,31 @@ Test failures give you a video recording of the failure
 You will need to setup docker on your build server
 
 
+### Dependencies
+```xml
+<dependencies>
+  <dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>testcontainers</artifactId>
+    <version>${test-containers.version}</version>
+    <scope>test</scope>
+  </dependency>
+  <dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>junit-jupiter</artifactId>
+    <version>${test-containers.version}</version>
+    <scope>test</scope>
+  </dependency>
+  <dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>elasticsearch</artifactId>
+    <version>${test-containers.version}</version>
+    <scope>test</scope>
+  </dependency>
+</dependencies>
+```
+
+
 ## Examples
 
 
@@ -182,7 +172,19 @@ Database schema changes over time
 When we change the schema, we need to be sure it is backwards compatible
 
 
-With a Testcontainer, we can run the real migration, with real data, to verify it works as expected
+We'd also like to be able to catch a bad change before trying to run it in a real environment
+
+
+With a Testcontainer, we can run the real migration, against real data, to verify it works as expected
+
+
+### Testing Strategy
+
+1. Create MySQL container
+2. Apply schema
+3. Insert test data
+4. Execute the production code we want to test
+5. Verify results
 
 
 ### Domain Objects
@@ -211,7 +213,7 @@ interface AddressDaoV1 {
            FROM Address
            WHERE city = :city"""
     )
-    fun findByCity(city: String): Address?
+    fun findByCity(city: String): Set<Address>
 }
 ```
 <!-- .element: style="font-size: 0.45em" -->
@@ -271,15 +273,6 @@ class PersonMapperV1 : RowMapper<Person> {
 We want to verify that the JOIN in the query, as well as the PersonMapper logic is correct
 
 
-### Testing Strategy
-
-1. Create MySQL container with credentials we can use to create a DataSource
-2. Run Liquibase to create the schema
-3. Insert test data to prepare the system under test using DbSetup
-4. Execute the code we want to test
-5. Verify results
-
-
 #### A base class for our tests that use a MySQL container
 ```kotlin
 internal class KMySQLContainer(imageName: String)
@@ -308,7 +301,7 @@ internal abstract class AbstractMySQLContainerTestBaseV1 {
         }
 
         private fun runSchemaMigration() {
-            val connection: Connection = mySqlContainer
+            val connection = mySqlContainer
                 .createConnection("?username=$liquibaseUser&password=$liquibasePassword")
 
             val database = DatabaseFactory.getInstance()
@@ -405,26 +398,6 @@ internal class PersonDaoV1Test : AbstractMySQLContainerTestBaseV1() {
             )
         )
     }
-
-    @Test
-    internal fun `find person by id with no address loads null address`() {
-        dbSetupTracker.skipNextLaunch()
-
-        val person = dao.findById(2L)
-        assertThat(
-            person,
-            present(
-                equalTo(
-                    Person(
-                        id = 2L,
-                        firstName = "Bruce",
-                        lastName = "Banner",
-                        address = null
-                    )
-                )
-            )
-        )
-    }
 }
 ```
 <!-- .element: style="font-size: 0.45em" -->
@@ -452,44 +425,31 @@ data class Person(
 
 #### Data Truncation Error
 ```kotlin
-@BeforeEach
-fun prepareDatabase() {
-    dbSetup(to = datasource) {
+internal class PersonDaoV2Test : AbstractMySQLContainerTestBaseV2() {
+    @Test
+    internal fun `this test will cause a DataTruncationException to be thrown`() {
+        assertThrows<DbSetupRuntimeException> {
+            dbSetup(to = datasource) {
 
-        deleteAllFrom(allTables)
+                deleteAllFrom(allTables)
 
-        insertInto("Person") {
-            mappedValues(
-                "id" to 1L,
-                "addressId" to null,
-                "firstName" to "Natasha",
-                "lastName" to "Romanov"
-            )
+                insertInto("Person") {
+                    mappedValues(
+                        "id" to 1L,
+                        "addressId" to null,
+                        "firstName" to "Natasha",
+                        "lastName" to "Romanov"
+                    )
+                }
+            }.launch()
         }
-    }.launchWith(dbSetupTracker)
-}
-
-@Test
-internal fun `a person has a default fullName`() {
-    dbSetupTracker.skipNextLaunch()
-
-    val person = dao.findById(1L)
-    assertThat(
-        person,
-        present(
-            equalTo(
-                Person(
-                    id = 1L,
-                    firstName = "Natasha",
-                    lastName = "Romanov",
-                    fullName = "Natasha Romanov"
-                )
-            )
-        )
-    )
+    }
 }
 ```
 <!-- .element: style="font-size: 0.45em" -->
+
+
+This sort of testing relies on you having some good test data to insert into your database
 
 
 ### Verifying Elasticsearch Queries
@@ -514,9 +474,6 @@ With Testcontainers we can verify that our production code works with a minimum 
 3. Create an index and index some documents
 4. Execute production code to run our query
 5. Verify the results
-
-
-Just like with the MySQL test we'll use an abstract class to ensure only one container is started to service all of our tests
 
 
 ```kotlin
@@ -564,7 +521,7 @@ abstract class ElasticsearchContainerTest {
                 } .forEach { request ->
                     client.indices()
                         .putTemplate(request, RequestOptions.DEFAULT)
-               }
+                }
         }
 
         /**
@@ -626,74 +583,6 @@ class PersonIndexDaoTest : ElasticsearchContainerTest() {
 
 
 ```kotlin
-class PersonService(private val client: RestHighLevelClient, private val index: String) {
-    fun query(query: Query): List<Person> {
-        val request = SearchRequest(
-            arrayOf(index),
-            SearchSourceBuilder()
-                .query(query.queryBuilder())
-                .size(query.size)
-        )
-        val response = client.search(request, RequestOptions.DEFAULT)
-
-        return response.hits.hits
-            .mapNotNull(SearchHit::getSourceAsString)
-            .map { Json.decodeFromString<ElasticsearchDocument>(it) as Person }
-    }
-}
-
-sealed class Query(val size: Int = 10, val filters: List<Filter> = emptyList()) {
-    abstract fun queryBuilder(): QueryBuilder
-}
-```
-<!-- .element: style="font-size: 0.45em" -->
-
-
-```kotlin
-class MatchAllQuery(size: Int = 10) : Query(size = size) {
-    override fun queryBuilder(): QueryBuilder = MatchAllQueryBuilder()
-}
-```
-<!-- .element: style="font-size: 0.45em" -->
-
-
-```kotlin
-    @Test
-    internal fun `match_all query returns all documents`() {
-        val index = createIndex("person-index")
-        index(index, avengers)
-
-        val actual = PersonService(client, index)
-            .query(MatchAllQuery(size = 10_000))
-
-        assertThat(actual, hasSize(equalTo(17)))
-    }
-```
-<!-- .element: style="font-size: 0.45em" -->
-
-
-```kotlin
-class FilterQuery(size: Int = 10, filters: List<Filter>) : Query(size, filters) {
-
-    constructor(size: Int = 10, filter: Filter, vararg filters: Filter)
-        : this(size, listOf(filter) + filters)
-
-    override fun queryBuilder(): QueryBuilder {
-        return BoolQueryBuilder().apply {
-            filters.map { filter ->
-                when (filter.op) {
-                    NUMBER_EQ, STRING_EQ -> TermQueryBuilder(filter.field, filter.value)
-                    else -> TODO("FilterOp.${filter.op} is not supported by FilterQuery.")
-                }
-            }.forEach(::must)
-        }
-    }
-}
-```
-<!-- .element: style="font-size: 0.45em" -->
-
-
-```kotlin
     @Test
     internal fun `filter query can find Avengers named Peter`() {
         val index = createIndex("person-index")
@@ -726,58 +615,14 @@ class FilterQuery(size: Int = 10, filters: List<Filter>) : Query(size, filters) 
 
         assertThat(
             actual.map { "${it.firstName} ${it.lastName}" },
-            equalTo("Peter Parker")
+            equalTo(listOf("Peter Parker"))
         )
     }
 ```
 <!-- .element: style="font-size: 0.45em" -->
 
 
-```kotlin
-class RangeQuery(size: Int = 10, filters: List<Filter>) : Query(size, filters) {
-    constructor(size: Int = 10, filter: Filter, vararg filters: Filter)
-        : this(size, listOf(filter) + filters)
-
-    override fun queryBuilder(): QueryBuilder {
-        return BoolQueryBuilder().apply {
-            filters.map { filter ->
-                when (filter.op) {
-                    NUMBER_IN_RANGE -> RangeQueryBuilder(filter.field)
-                        .gte(filter.values.first())
-                        .lte(filter.values.last())
-                    else -> TODO("FilterOp.${filter.op} is not supported by RangeQuery.")
-                }
-            }.forEach(::must)
-        }
-    }
-}
-```
-<!-- .element: style="font-size: 0.45em" -->
-
-
-```kotlin
-    @Test
-    internal fun `range query can find Avengers in their thirties`() {
-        val index = createIndex("person-index")
-        index(index, avengers)
-
-        val actual = PersonService(client, index)
-            .query(RangeQuery(
-                filter = Filter(
-                    field = "age",
-                    op = NUMBER_IN_RANGE,
-                    values = (30..39).toList())))
-
-        assertThat(
-            actual.map { it.age }.toSet(),
-            equalTo(setOf(34, 36, 38))
-        )
-    }
-```
-<!-- .element: style="font-size: 0.45em" -->
-
-
-### Acceptance Testing
+### Webdriver Testing
 
 Finally, let's do some black box UI testing with Wikipedia
 
@@ -789,58 +634,67 @@ Finally, let's do some black box UI testing with Wikipedia
   + Then find a link with the text 'rickrolling'
   + And from that linked page we'll verify that we find the word 'meme'
 
-Adapted from this blog post: https://rnorth.org/better-junit-selenium-testing-with-docker-and-testcontainers
+[Adapted from a blog post by Richard North](https://rnorth.org/better-junit-selenium-testing-with-docker-and-testcontainers)
 <!-- .element: style="font-size: 0.45em" -->
 
 
-#### SeleniumContainerTest
+#### Firefox Container Test
 ```kotlin
 class KBrowserWebDriverContainer(imageName: String)
     : BrowserWebDriverContainer<KBrowserWebDriverContainer>(imageName)
 
-class SeleniumContainerTest {
+private const val recordingDir = "/home/.../target/webdriver-recordings"
 
-    @ParameterizedTest(name = "[{index}] {0}")
-    @EnumSource(Browser::class)
-    internal fun `Wikipedia's Rick Astley page mentions rickrolling`(browser: Browser) {
-        val container = browser.container
-        container.start()
+@Testcontainers
+@TestInstance(Lifecycle.PER_CLASS)
+class FirefoxContainerTest {
 
-        val driver = container.webDriver
-        driver.manage().timeouts().implicitlyWait(2, TimeUnit.SECONDS)
+    @Container
+    val container = KBrowserWebDriverContainer(
+        "selenium/standalone-firefox-debug:3.141.59"
+    ).withCapabilities(FirefoxOptions())
+        .waitingFor(Wait.forListeningPort())
+        .withRecordingMode(RECORD_ALL, File(recordingDir))
+        .withRecordingFileFactory(
+            customRecordingFileFactory(
+                "Wikipedia-Rick-Astley-page-mentions-rickrolling", "firefox"
+        )
+    )
 
-        driver.get("https://www.wikipedia.org")
-        driver.findElement(By.name("search")).apply {
-            sendKeys("Rick Astley")
-            submit()
+    companion object {
+        @BeforeAll
+        @JvmStatic
+        fun setup() {
+            with(File(recordingDir)) {
+                if (!exists()) {
+                    mkdir()
+                }
+            }
         }
+    }
 
-        driver.findElement(By.linkText("rickrolling")).click()
-        val foundExpectedText = driver.findElements(By.cssSelector("p")).map { it.text }.any { "meme" in it }
-
-        assertThat(foundExpectedText, equalTo(true))
-
-        container.stop()
+    @Test
+    internal fun `Wikipedia Rick Astley page mentions rickrolling`() {
+        runTest(container)
     }
 }
 
-enum class Browser(val container: KBrowserWebDriverContainer) {
-    FIREFOX(
-        KBrowserWebDriverContainer("selenium/standalone-firefox-debug:3.141.59")
-            .withCapabilities(FirefoxOptions())
-            .waitingFor(Wait.forListeningPort())
-            .withRecordingMode(RECORD_ALL, File("./target/webdriver-recordings"))
-            .withRecordingFileFactory(DefaultRecordingFileFactory())
-    ),
+private fun runTest(container: KBrowserWebDriverContainer) {
+    val driver = container.webDriver
+    driver.manage().timeouts().implicitlyWait(2, TimeUnit.SECONDS)
 
-    CHROME(
-        KBrowserWebDriverContainer("selenium/standalone-chrome-debug:3.141.59")
-            .withCapabilities(ChromeOptions())
-            .waitingFor(Wait.forListeningPort())
-            .withRecordingMode(RECORD_ALL, File("./target/webdriver-recordings"))
-            .withRecordingFileFactory(DefaultRecordingFileFactory())
-    ),
-    ;
+    driver.get("https://www.wikipedia.org")
+    driver.findElement(By.name("search")).apply {
+        sendKeys("Rick Astley")
+        submit()
+    }
+
+    driver.findElement(By.linkText("rickrolling")).click()
+    val foundExpectedText = driver.findElements(By.cssSelector("p"))
+        .map { it.text }
+        .any { "meme" in it }
+
+    assertThat(foundExpectedText, equalTo(true))
 }
 ```
 <!-- .element: style="font-size: 0.45em" -->
@@ -849,5 +703,17 @@ enum class Browser(val container: KBrowserWebDriverContainer) {
 ## Conclusion
 
 
+Some interactions with external services have been historically difficult to test
+
+
+Testcontainers gives us a relatively lightweight and reliable method of testing these interactions
+
+
+With a little bit of effort to get your container initialized for your application, the actual tests become fairly simple to write
+
+
 # Questions?
 
+Slides and code available at
+
+https://github.com/quincy/testcontainers-presentation

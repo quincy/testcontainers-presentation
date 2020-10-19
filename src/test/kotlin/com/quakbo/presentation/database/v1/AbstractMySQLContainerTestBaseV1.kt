@@ -7,7 +7,6 @@ import liquibase.database.jvm.JdbcConnection
 import liquibase.resource.ClassLoaderResourceAccessor
 import org.testcontainers.containers.MySQLContainer
 import org.testcontainers.containers.wait.strategy.Wait
-import java.sql.Connection
 import javax.sql.DataSource
 
 
@@ -36,7 +35,7 @@ internal abstract class AbstractMySQLContainerTestBaseV1 {
         }
 
         private fun runSchemaMigration() {
-            val connection: Connection = mySqlContainer.createConnection("?username=$liquibaseUser&password=$liquibasePassword")
+            val connection = mySqlContainer.createConnection("?username=$liquibaseUser&password=$liquibasePassword")
 
             val database = DatabaseFactory.getInstance().findCorrectDatabaseImplementation(JdbcConnection(connection))
 

@@ -145,7 +145,7 @@ class PersonIndexDaoTest : ElasticsearchContainerTest() {
 
         assertThat(
             actual.map { "${it.firstName} ${it.lastName}" },
-            equalTo("Peter Parker")
+            equalTo(listOf("Peter Parker"))
         )
     }
 
