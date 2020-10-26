@@ -700,6 +700,9 @@ private fun runTest(container: KBrowserWebDriverContainer) {
 <!-- .element: style="font-size: 0.45em" -->
 
 
+# Show the video
+
+
 ## Conclusion
 
 
@@ -717,3 +720,5 @@ With a little bit of effort to get your container initialized for your applicati
 Slides and code available at
 
 https://github.com/quincy/testcontainers-presentation
+
+https://www.testcontainers.org/
