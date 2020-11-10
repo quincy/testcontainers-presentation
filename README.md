@@ -6,6 +6,8 @@ This is a presentation I gave at DevCon on October 23, 2020.
 
 # Viewing The Presentation
 
+You can view the [recorded presentation from DevCon 2020 on Youtube](https://www.youtube.com/watch?v=hSYm1nZKUWA).
+
 This presentation is written in Markdown format and is intended to be presented using the [reveal-md](https://github.com/webpro/reveal-md) tool.
 
 ## Installation
